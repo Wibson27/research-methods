@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lab 5 Research Gap Statement</title>
+<style>
+  @page { size: A4; margin: 15mm 16mm 14mm 16mm; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: "Times New Roman", Times, serif; font-size: 10.4pt; line-height: 1.32; color: #111; }
+  h1 { font-size: 13.6pt; margin: 0 0 2pt; line-height: 1.2; }
+  .meta { font-size: 9pt; color: #333; margin: 0 0 7pt; }
+  h2 { font-size: 10.4pt; margin: 7pt 0 2pt; }
+  p { margin: 0 0 4pt; text-align: justify; hyphens: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 8.9pt; line-height: 1.25; margin: 3pt 0 4pt; }
+  th, td { border: 0.6pt solid #777; padding: 2.4pt 4pt; vertical-align: top; text-align: left; }
+  th { background: #eee; }
+  td.rq { width: 33%; }
+  .refs { font-size: 8.1pt; line-height: 1.22; }
+  .refs p { margin: 0 0 1.2pt; text-align: left; padding-left: 14pt; text-indent: -14pt; }
+  .note { font-size: 8.6pt; color: #333; }
+</style>
+</head>
+<body>
+
+<h1>Does In-Loop LLM Review Make Patches Correct, or Only Make Them Pass? A Research Gap in Repository-Level LLM4APR</h1>
+<p class="meta">Research Gap Statement &middot; Lab 5, Research Methods (Week 5) &middot; Rifqi Wibisono (魏副棋), L25020014 &middot; Bottleneck selected: <b>patch correctness</b> (with cost), from the MAGIS paper [2] and the LLM4APR review [1]</p>
+
+<h2>1. Background and state of the art</h2>
+<p>LLM-based automated program repair (LLM4APR) grew from one study in 2020 to 189 by September 2025, and its frontier has moved from single-function bugs to repository-level issue resolution [1]. The standard testbed, SWE-bench, gives a model a real GitHub issue and a full Python repository. It counts the issue as <i>resolved</i> when the model's patch makes the developer's hidden tests pass [3]. Directly prompted models resolve almost nothing in this setting: GPT-4 resolves 1.74% even when given the files to edit. The field responded with agentic pipelines. MAGIS [2] divides the work among four LLM roles: Manager, Repository Custodian, Developer, and a Quality Assurance (QA) Engineer that reviews every code change and returns it for revision until it approves. MAGIS reports 13.94% resolution. In-loop review has since spread to other systems [9].</p>
+
+<h2>2. The specific unresolved gap</h2>
+<p>All these gains are measured by one oracle: the tests that shipped with the developer's fix. Tests are an incomplete specification, and APR research has known since Qi et al. [7] that test-passing (<i>plausible</i>) patches are often wrong: GenProg's 55 reported fixes contained 2 correct ones. The problem persists at repository scale. On SWE-bench Verified, the human-filtered 500-issue subset, the full test suite fails 7.8% of patches counted as resolved. Differential testing shows 29.6% behave differently from the developer's patch, and an estimated 11% of plausible patches are incorrect, inflating reported resolution by 6.4 points [4]. Test augmentation exposed 345 mislabelled patches [5] and cut top agents' resolved rates by 4.2–9.0% [6].</p>
+<p>Against this, MAGIS credits its QA reviewer with +3.31 points with issue hints and +1.57 without [2]. These gains are smaller than the measured inflation and are measured by the same oracle that produces it.</p>
+<p><b>Gap:</b> whether in-loop LLM review makes patches more correct, or mostly turns failing patches into plausible-but-incorrect ones, has not been measured. None of the six LLM-based patch-correctness assessors in the LLM4APR review was evaluated on repository-level issue patches [1, §8.3].</p>
+
+<h2>3. Why existing approaches fail (root cause)</h2>
+<p><b>The reviewer sees text, not behaviour.</b> MAGIS's QA Engineer is the same model reading a diff, so it inherits the generator's blind spots. Olausson et al. found self-repair is bottlenecked by exactly this: a model's ability to diagnose its own code [8].</p>
+<p><b>The errors that survive testing are largely invisible in a diff.</b> 27.3% of behaviourally divergent patches change <i>more</i> behaviour than the developer's fix, and faulty supplementary changes cause 36.4% of the patches confirmed incorrect [4]. A side effect on an untested path neither appears in the diff nor is exercised by an issue-specific test.</p>
+<p><b>Execution-aware review checks the intended change, not unintended ones.</b> SpecRover's reviewer and Agentless's validation run reproduction and regression tests [9, 11]. These confirm the reported symptom is gone and already-tested behaviour is preserved, but say nothing about untested behaviour the patch altered.</p>
+<p><b>Review has no correctness feedback signal.</b> Reviewers are designed and scored against the same weak tests, so pushing a patch to <i>pass</i> rather than to be <i>right</i> is rewarded. The 2026 review-loop preprints (SWE-Review, RETRACE) also report gains on the original tests only.</p>
+<p><b>Cost is unreported.</b> MAGIS gives no token or monetary cost, so whether review pays for itself is unknown, an omission Kapoor et al. identify as distorting agent research [12].</p>
+
+<h2>4. Proposed intervention and expected contribution</h2>
+<p><b>Intervention: differential review.</b> Before the reviewer decides, the pipeline generates and executes inputs on which the original and the patched repository behave differently. The reviewer must justify each observed difference against the issue text, or reject the patch and return the differentiating input as concrete feedback. This brings DiffTGen's idea of exposing original-versus-patched differences [10] into the LLM review loop. It reuses PatchDiff's call-trace-guided test generator [4], with one change: PatchDiff compares against the developer's patch, which exists only at evaluation time, while differential review compares against the original program, which is available at repair time.</p>
+<p><b>Evaluation.</b> We will run inside MAGIS's released implementation, whose QA step is a configuration switch and which records the pre-review patch. The benchmark is SWE-bench Verified, with one fixed low-cost model, the files to edit supplied (holding localisation constant) and issue hints disabled (they can leak solutions). Each instance yields paired patches under no review, text-only review and differential review. Each patch is scored by the original tests and by a strengthened oracle: the full developer test suite, PatchDiff against the developer's patch, augmented tests where released [5, 6], and two-rater manual adjudication of divergent patches.</p>
+<p><b>Expected contributions:</b> (1) the first measurement of how much of in-loop review's gain survives a strengthened oracle; (2) a review mechanism aimed at the failure class tests miss; (3) the cost per correctly resolved issue of each review design. The novelty claim is deliberately narrow: review and differential testing each exist; what is new is their controlled combination, evaluated beyond the benchmark's own tests.</p>
+
+<h2>Research questions</h2>
+<table>
+<tr><th>Research question</th><th>Independent variable(s)</th><th>Dependent variable(s)</th><th>Hypothesis and analysis</th></tr>
+<tr><td class="rq"><b>RQ1.</b> To what extent does the resolution gain from text-only in-loop review (MAGIS's QA Engineer) persist when correctness is judged by a strengthened oracle instead of SWE-bench Verified's original tests?</td>
+<td><b>Review:</b> none vs text-only. Paired per instance.<br><b>Oracle:</b> original tests vs strengthened oracle.</td>
+<td>Resolution rate under each oracle.<br><b>Illusory gain:</b> &Delta;<sub>original</sub> &minus; &Delta;<sub>strengthened</sub>.</td>
+<td><b>H1:</b> &Delta;<sub>strengthened</sub> &lt; &Delta;<sub>original</sub>.<br><b>Analysis:</b> McNemar's exact test; bootstrap 95% CI on the illusory gain.</td></tr>
+<tr><td class="rq"><b>RQ2.</b> Does differential review raise the correct-resolution rate and lower the rate of plausible-but-incorrect patches, compared with text-only review?</td>
+<td><b>Reviewer type:</b> text-only vs differential.</td>
+<td>Correct-resolution rate (strengthened oracle).<br>Share of plausible patches judged incorrect.<br>Reviewer false-approval rate.<br>Reviewer false-rejection rate.</td>
+<td><b>H2:</b> differential review lowers the incorrect-plausible share without lowering correct resolution.<br><b>Analysis:</b> McNemar's test; Cohen's &kappa; for the two raters.</td></tr>
+<tr><td class="rq"><b>RQ3.</b> What does each review design cost per correctly resolved issue, and does differential review's extra test generation and execution pay for its correctness gain?</td>
+<td><b>Review condition:</b> none, text-only, differential.</td>
+<td>Input tokens, output tokens, US$ and wall-clock time per <i>correctly</i> resolved issue (strengthened oracle).</td>
+<td><b>H3:</b> differential review has a lower cost per correct resolution than text-only review.<br><b>Analysis:</b> bootstrap CIs; cost&ndash;accuracy Pareto plot [12].</td></tr>
+</table>
+<p class="note">Controlled variables in all RQs: model and temperature, instance set, supplied files, hints off, maximum review rounds (2, as in MAGIS's released code), SWE-bench Docker harness.</p>
+
+<div class="refs">
+<h2>References</h2>
+<p>[1] Q. Zhang, C. Fang, Y. Xie, Y. Ma, W. Sun, Y. Yang, Z. Chen. A Systematic Literature Review on Large Language Models for Automated Program Repair. <i>ACM TOSEM</i>, 2026. doi:10.1145/3799693</p>
+<p>[2] W. Tao, Y. Zhou, Y. Wang, W. Zhang, H. Zhang, Y. Cheng. MAGIS: LLM-Based Multi-Agent Framework for GitHub Issue ReSolution. <i>NeurIPS</i>, 2024.</p>
+<p>[3] C. E. Jimenez, J. Yang, A. Wettig, S. Yao, K. Pei, O. Press, K. Narasimhan. SWE-bench: Can Language Models Resolve Real-World GitHub Issues? <i>ICLR</i>, 2024.</p>
+<p>[4] Y. Wang, M. Pradel, Z. Liu. Are &ldquo;Solved Issues&rdquo; in SWE-bench Really Solved Correctly? An Empirical Study. <i>ICSE</i>, 2026. doi:10.1145/3744916.3764576</p>
+<p>[5] B. Yu, Y. Zhu, P. He, D. Kang. UTBoost: Rigorous Evaluation of Coding Agents on SWE-Bench. <i>ACL</i>, 2025.</p>
+<p>[6] C. Li, Y. Xu, Z. Wang, S. H. Tan, T.-H. Chen. Probe to Generate: Program Variant-Guided Test Augmentation for Repository-Level Repair Benchmarks. <i>ASE</i>, 2026 (accepted).</p>
+<p>[7] Z. Qi, F. Long, S. Achour, M. Rinard. An Analysis of Patch Plausibility and Correctness for Generate-and-Validate Patch Generation Systems. <i>ISSTA</i>, 2015.</p>
+<p>[8] T. X. Olausson, J. P. Inala, C. Wang, J. Gao, A. Solar-Lezama. Is Self-Repair a Silver Bullet for Code Generation? <i>ICLR</i>, 2024.</p>
+<p>[9] H. Ruan, Y. Zhang, A. Roychoudhury. SpecRover: Code Intent Extraction via LLMs. <i>ICSE</i>, 2025.</p>
+<p>[10] Q. Xin, S. P. Reiss. Identifying Test-Suite-Overfitted Patches through Test Case Generation. <i>ISSTA</i>, 2017.</p>
+<p>[11] C. S. Xia, Y. Deng, S. Dunn, L. Zhang. Agentless: Demystifying LLM-Based Software Engineering Agents. <i>Proc. ACM Softw. Eng. (FSE)</i>, 2025. doi:10.1145/3715754</p>
+<p>[12] S. Kapoor, B. Stroebl, Z. S. Siegel, N. Nadgir, A. Narayanan. AI Agents That Matter. <i>Transactions on Machine Learning Research</i>.</p>
+<p>Preprints cited for currency (not peer-reviewed): R. Wang et al., SWE-Review, arXiv:2607.06065 (2026); C. Li et al., RETRACE, arXiv:2608.08950 (2026).</p>
+</div>
+
+</body>
+</html>
