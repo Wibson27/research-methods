@@ -24,25 +24,28 @@ Student ID L25020014}}
 \maketitle
 
 \begin{abstract}
-We propose to use reinforcement learning to train an open-weight large language model (LLM) to write
-computer-aided design (CAD) programs for load-bearing parts, rewarded by a finite element analysis
-(FEA) of the part each program produces. Current text-to-CAD models are trained and judged on whether a
-shape resembles a reference; whether the part carries its load is never checked. FEAther is a
-multi-agent system built around one trained agent. An untrained parser turns a request into a
-structured specification; the trained designer writes a CadQuery program; a sandboxed checker runs it,
-meshes the part, solves it with CalculiX, and returns a graded reward with a report. The system is
-self-learning: the designer is trained on its own scored attempts, and at run time it revises its design
-from the report until the part passes, then removes material while it still passes.
-We ask whether an FEA-graded reward beats a shape-similarity reward (RQ1), whether run-time feedback adds
-anything beyond training or only adds attempts (RQ2), and how much material the passing designs use
-(RQ3). A pilot has built the oracle and the data. The checker's FEA agrees with hand calculations within
-10\% on ten reference parts. Forty generated specifications are each proven solvable. The untrained
-Qwen3-1.7B and Qwen3-8B models solve none of them, and repeat their own failed program in about 80\% of
-revision attempts.
+Large language models (LLMs) can now write computer-aided design (CAD) programs that build
+three-dimensional parts, but are taught and judged by resemblance to a reference.
+A part can look right and still fail under load. In our finite element analysis (FEA), narrowing one
+bend of a bracket from 9\,mm to 2\,mm raises its peak stress by 53\% while the shape barely changes,
+and in a recent study the best AI agents passed none of 50 engineering briefs on their first attempt.
+Existing systems check designs with physics without learning from the results, or learn only to tune
+fixed templates; none learns to choose a part's layout from physics. This
+proposal presents FEAther, a self-learning multi-agent system for lightweight load-bearing part design.
+A parser agent turns a request into a specification, a designer agent writes the CAD program,
+and a checker simulates the part with FEA and reports where it fails and by how much. The designer
+revises until the part passes, lightens it while it still passes, and learns from the checker's
+scores by reinforcement learning. We ask whether learning from physics beats learning from shape
+similarity, whether run-time feedback helps beyond learning, and how much material passing designs use.
+A pilot validated the checker within 10\% of textbook calculations on ten parts and generated 40
+specifications, each proven solvable; two off-the-shelf open models solved none and resubmitted their
+failed program in about 80\% of revisions. The study will establish whether LLM-designed parts can be verified by physics rather than
+judged by appearance.
 \end{abstract}
 
 \begin{IEEEkeywords}
-code generation, CAD, finite element analysis, reinforcement learning, self-repair, test oracle
+code generation, computer-aided design, finite element analysis, large language models, multi-agent
+systems, reinforcement learning, self-repair, test oracles
 \end{IEEEkeywords}
 
 \section{Introduction}
@@ -56,14 +59,14 @@ code generation, CAD, finite element analysis, reinforcement learning, self-repa
 \toprule
 Question & Independent variable & Dependent variable & Analysis\\
 \midrule
-RQ1: Does GRPO with an FEA-graded reward raise the share of held-out specs fully passed, compared with
-SFT alone and with a shape-similarity reward?
+RQ1: Does GRPO with an FEA-graded reward fully pass more held-out specs than SFT alone and than a
+shape-similarity reward?
 & training: SFT only; GRPO with a shape reward, an FEA reward, or both
 & full pass rate; share of requirements met; invalid rate
 & McNemar's test; bootstrap 95\% intervals\\
 \addlinespace
-RQ2: Does run-time FEA feedback improve designs beyond what training put into the model, and is the gain
-from the feedback or from more attempts?
+RQ2: Does run-time FEA feedback improve designs beyond training, and is the gain from the feedback or
+from more attempts?
 & designer: SFT, GRPO, GRPO with revise and lighten prompts; attempts: one-shot, best-of-$k$, loop;
 $k\in\{1,3,5,10\}$
 & specs passed within $k$; mass of the lightest pass; tokens per solved spec
@@ -158,20 +161,18 @@ material instead of only scaling it.
 
 \section{Approach}\label{sec:approach}
 
-Fig.~\ref{fig:system} follows one spec through the system.
-
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figures/pipeline_paper.png}
-\caption{One pass through FEAther on generated spec l\_bracket-0000. The program is an excerpt of the spec's reference;
-the part and its mesh are the checker's own; the report is the checker's output. Only the designer (blue
-outline) is trained. At run time the report returns to the designer, which revises while the part fails and
-lightens it while it passes, as here: the part passes but is over its mass budget. In training, the checker's
-reward updates the designer by GRPO (dashed).}
+\caption{One pass through FEAther on generated spec l\_bracket-0000: an excerpt of the spec's reference
+program, the checker's part and mesh, and its actual report. Only the designer (blue outline) is trained.
+At run time the report returns to the designer, which revises while the part fails and lightens it while
+it passes, as here. In training, the checker's reward updates the designer by GRPO (dashed).}
 \label{fig:system}
 \end{figure}
 
-\textbf{Specifications.} Each specification (spec) is a structured record and an English prompt that
+\textbf{Specifications.} Fig.~\ref{fig:system} follows one specification (spec) through the system.
+Each spec is a structured record and an English prompt that
 states every number in it: a load (force, point, direction, and patch radius), bolt holes (axis and
 diameter), an envelope the part must stay inside, the material (PLA, Young's modulus 2300\,MPa), and
 limits on peak stress, deflection, and mass. A generator samples specs for each part family (first
@@ -222,10 +223,10 @@ for a lighter version that still passes, and the lightest passing design is kept
 \textbf{Training.} The designer is Qwen3-8B~\cite{yang2025qwen3}, with Qwen3-1.7B for pilots.
 Supervised fine-tuning (SFT) on public text-to-CadQuery data~\cite{guan2025cadcoder,rukhovich2024cadrecode}
 teaches the language. Group Relative Policy Optimization (GRPO)~\cite{shao2024deepseekmath} then samples
-a group of $G=8$ programs for each prompt, scores them with the checker ($r_1,\dots,r_G$) and gives each
+a group of $G=8$ programs for each prompt, scores them with the checker ($R_1,\dots,R_G$) and gives each
 program the advantage
 \begin{equation}
-A_i = \frac{r_i - \operatorname{mean}(r_1,\dots,r_G)}{\operatorname{std}(r_1,\dots,r_G)}.
+A_i = \frac{R_i - \operatorname{mean}(R_1,\dots,R_G)}{\operatorname{std}(R_1,\dots,R_G)}.
 \end{equation}
 The update makes the tokens of programs with $A_i>0$ more likely and the rest less likely. A prompt whose
 eight programs all score the same therefore teaches nothing, which is why the reward is graded rather
@@ -237,9 +238,7 @@ run on 20 CPU workers at 2--8\,s each, so generating designs on the GPU is the b
 
 \section{Preliminary Results}
 
-All results below come from the project repository and can be re-run with one command each.
-
-\textbf{The oracle agrees with theory.} A cantilever beam gave a tip deflection of 1.736\,mm against
+\textbf{Checker validation.} A cantilever beam gave a tip deflection of 1.736\,mm against
 1.739--1.753\,mm from beam theory without and with shear deflection. Ten hand-written reference parts in three families put their worst point
 where a reliable formula applies (Table~\ref{tab:oracle}): curved-beam theory for the bends of
 L-brackets and hooks, and Heywood's formula for a hole in a strip~\cite{budynas2020shigley,pilkey2008peterson}.
@@ -265,11 +264,11 @@ Hanger strap & 3 & hole in a strip (Heywood) & 0.995--1.010\\
 \end{tabular}
 \end{table}
 
-\textbf{Every spec is solvable.} The generator produced 40 specs, 20 L-brackets and 20 hooks; every
+\textbf{Specification generation.} The generator produced 40 specs, 20 L-brackets and 20 hooks; every
 reference passed on its first FEA run, with peaks of 7.6--9.1\,MPa against the
 10\,MPa limit.
 
-\textbf{Untrained models solve nothing.} We served Qwen3-1.7B (16-bit) and Qwen3-8B (8-bit floating
+\textbf{Untrained baseline.} We served Qwen3-1.7B (16-bit) and Qwen3-8B (8-bit floating
 point) with vLLM~\cite{kwon2023vllm}, thinking mode off, and gave each eight checker runs per spec,
 either as eight independent samples or in the loop (Table~\ref{tab:baseline}). Neither model passed a
 spec. Most programs misuse the CadQuery interface; those that make a solid cross into the wall, because
@@ -325,31 +324,36 @@ normally distributed differences. As an extension, a subset of before-and-after 
 isotropic material, while printed PLA is weaker across its layers. Validation against hand
 calculations and the planned physical tests bound this. \textit{Internal.} A trained model may exploit
 the oracle, for example with geometry that meshes oddly; the staged checks, the stress-reading zones,
-mesh-refinement spot checks, and a log of every exploit found address this. \textit{External.} The specs
+mesh-refinement spot checks, and a log of every exploit found, with earlier checkpoints re-scored after
+each fix, address this. \textit{External.} The specs
 come from our own generator; held-out families test whether the model generalizes beyond it, and the
-first results cover only PLA and up to five families. \textit{Conclusion.} The 40-spec pilot is small;
-the final evaluation uses hundreds of held-out specs and repeated training seeds.
+first results cover only PLA and up to five families. \textit{Conclusion validity.} The 40-spec pilot is small;
+the final evaluation uses hundreds of held-out specs and repeated seeds.
 
 \section{Risks, Plan, and Availability}
 
 \textbf{Risks and fallbacks.} If SFT still leaves no designs reaching the structural checks, training
 starts from easier specs (limits well above the reference's stress) and from revise prompts built by
 breaking reference programs. If GRPO on the 8B model does not fit in 16\,GB, the 1.7B model is trained
-fully and a rented GPU runs the 8B experiments. If the checker is exploited, it is fixed and earlier
-checkpoints are re-scored with the fixed version. If a newer paper trains a CAD generator on FEA
-results, the headline moves to the print-aware reward and the physical tests.
+fully and a rented GPU runs the 8B experiments. If a newer paper trains a CAD generator on FEA
+results, the contribution rests on the mass objective, RQ2, and the physical tests.
 
-\textbf{Expected outcomes.} Success means a significant gain in full pass rate over SFT alone and over
-the shape reward (H1), a loop that beats best-of-$k$ once revision is trained (H2), and passing designs
-lighter than sizing alone achieves (H3). A negative result on H2 would still be informative: it would
-extend Olausson et al.'s finding~\cite{olausson2024selfrepair} from code to physics-checked design.
+\textbf{Plan.} Months 1--2: SFT, then GRPO pilots on the 1.7B and 8B models. Months 3--4: five families
+and RQ1--RQ3. Month 5: physical tests. Month 6: a demonstration and the thesis.
 
-\textbf{Plan.} Months 1--2: SFT, then a GRPO pilot on the 1.7B model and the 8B model. Months 3--4: five
-families and the experiments for RQ1--RQ3. Month 5: physical tests. Month 6: a demonstration and the
-thesis.
+\textbf{Availability.} Code, the 40 specs, and all baseline results are in a Git repository, where each
+result in Section~V re-runs with one command; it will be public with the thesis and is available to
+reviewers on request.
 
-\textbf{Availability.} Code, the 40 specs, and all baseline results are in a Git repository that will be
-made public with the thesis, and is available to reviewers on request.
+\section{Conclusion}
+
+FEAther asks whether an LLM can learn to design load-bearing parts from physics rather than from
+appearance. The pilot has built what this needs: a validated checker, 40 solvable specifications, and a
+baseline that untrained models fail entirely. The proposal succeeds if learning from FEA beats learning
+from shape (H1), trained revision beats independent attempts (H2), and passing designs are lighter than
+sizing alone makes them (H3); a negative H2 would still extend Olausson et al.'s
+finding~\cite{olausson2024selfrepair} from code to physics-checked design. A simulation used as the test
+oracle for generated programs may also serve other engineering artifacts written as code.
 
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
