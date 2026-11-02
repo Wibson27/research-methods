@@ -2,6 +2,8 @@
 
 **Deliverable:** [FEAther_Proposal.pdf](FEAther_Proposal.pdf) (4 pages, IEEE two-column).
 **Source:** [source/main.tex](source/main.tex) and [source/refs.bib](source/refs.bib), compiled with Tectonic (XeTeX).
+**Pitch deck:** [FEAther_Pitch.pptx](FEAther_Pitch.pptx) ([PDF](FEAther_Pitch.pdf)), 7 slides for the
+3-minute pitch plus the references; the pitch script is in the speaker notes.
 
 **Title:** *FEAther: A Self-Learning Multi-Agent System for Lightweight Load-Bearing Part Design with Finite Element Analysis*
 
@@ -24,7 +26,7 @@ them. FEAther trains the model that chooses the *configuration*.
 |---|---|---|---|
 | RQ1 | Does GRPO with an FEA-graded reward raise the share of held-out specs fully passed, compared with SFT alone and with a shape-similarity reward? | training: SFT only; GRPO with shape, FEA, or both rewards | full pass rate; requirements met; invalid rate |
 | RQ2 | Does run-time FEA feedback improve designs beyond training, and is the gain from feedback or from more attempts? | designer (SFT / GRPO / GRPO with revise and lighten prompts); one-shot / best-of-k / loop; k = 1, 3, 5, 10 | specs passed within k; mass of lightest pass; tokens per solved spec |
-| RQ3 | How much material do passing designs use, and what does the mass term change? | reward with or without the mass term | mass relative to sizing-only and topology-optimised references |
+| RQ3 | How much material do passing designs use, and what does the mass term change? | reward with or without the mass term | mass relative to sizing-only and topology-optimized references |
 
 ## Pilot results in the proposal
 

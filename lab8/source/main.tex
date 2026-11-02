@@ -10,8 +10,7 @@
 \usepackage{array}
 \usepackage{booktabs}
 \usepackage{url}
-\usepackage{tikz}
-\usetikzlibrary{arrows.meta}
+\usepackage{graphicx}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 
 \begin{document}
@@ -50,7 +49,7 @@ code generation, CAD, finite element analysis, reinforcement learning, self-repa
 
 % Defined here so that it floats to the top of page 2, next to Section III.
 \begin{table*}[t]
-\caption{Research questions, variables and analysis}
+\caption{Research questions, variables, and analysis}
 \label{tab:rq}
 \centering\footnotesize
 \begin{tabular}{@{}L{0.32\textwidth}L{0.25\textwidth}L{0.22\textwidth}L{0.13\textwidth}@{}}
@@ -72,24 +71,34 @@ $k\in\{1,3,5,10\}$
 \addlinespace
 RQ3: How much material do passing designs use, and what does the reward's mass term change?
 & reward with or without the mass term
-& mass relative to sizing-only and topology-optimised references; pass rate
+& mass relative to sizing-only and topology-optimized references; pass rate
 & Wilcoxon signed-rank test\\
 \bottomrule
 \end{tabular}
 \end{table*}
 
 A parametric CAD model can be written as a program. In CadQuery~\cite{cadquery}, a Python library on the
-OpenCASCADE geometry kernel, a bracket is a script that sketches profiles, extrudes them and cuts holes;
-running it yields a solid that can be meshed, simulated and printed. Because such programs are text,
-LLMs can learn to write them, and recent models translate text, images or point clouds into
+OpenCASCADE geometry kernel, a bracket is a script that sketches profiles, extrudes them, and cuts holes;
+running it yields a solid that can be meshed, simulated, and printed. Because such programs are text,
+LLMs can learn to write them, and recent models translate text, images, or point clouds into
 CadQuery~\cite{rukhovich2024cadrecode,guan2025cadcoder,kolodiazhnyi2026cadrille}.
 
 These models are trained and evaluated on geometric resemblance: a reward or metric compares the
 generated shape with a reference shape, for example by Chamfer distance. For a load-bearing part,
-resemblance is the wrong oracle. Two brackets that look alike can differ widely in peak stress, because
+resemblance is the wrong oracle. Two brackets that look alike can differ widely in peak stress (Fig.~\ref{fig:stress}), because
 stress concentrates at small features such as the inside radius of a bend or the edge of a
 hole~\cite{budynas2020shigley,pilkey2008peterson}. Regenwetter et al.\ showed that similarity metrics
-miss engineering performance~\cite{regenwetter2023beyond}. When designs are checked by physics, current
+miss engineering performance~\cite{regenwetter2023beyond}.
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/stress_paper.png}
+\caption{Peak von Mises stress in two L-brackets that differ only in the inside radius of the bend, computed by
+the checker (Section~\ref{sec:approach}) under the same 15\,N load at 70\,mm from the wall, with the same 6\,$\times$\,24\,mm
+section and bolts. Tightening the bend from 9\,mm to 2\,mm raises the peak from 8.7 to 13.4\,MPa,
+34\% over the 10\,MPa limit, and saves only 0.7\,g. Gray: zones next to the rigid bolts and the load
+patch, where stress is not read.}
+\label{fig:stress}
+\end{figure} When designs are checked by physics, current
 systems fail: in Son et al.'s 50 FEA-checked engineering briefs, no frontier agent's first design passed
 every requirement~\cite{son2026selfimproving}, and CADEngBench reports that matching a reference FEA
 response ``remains difficult''~\cite{singh2026cadengbench}.
@@ -101,7 +110,7 @@ attempts are paid for~\cite{olausson2024selfrepair}. Neither has been tested wit
 
 The closest work, COSMO-Agent~\cite{deng2026cosmo}, trains Qwen3-8B with the GRPO algorithm and the
 CalculiX solver in the loop, but only to choose parameter values for 25 fixed CadQuery templates. In
-engineering terms this is \emph{sizing}; it caps cost rather than minimising mass, and it used 16 H200
+engineering terms this is \emph{sizing}; it caps cost rather than minimizing mass, and it used 16 H200
 GPUs. No work we found trains a model to make \emph{configuration} choices (the layout: where material
 goes, whether there is a rib or a cutout), written as a CAD program, against FEA-checked requirements.
 Our last arXiv search, on 1~November 2026, found RL-trained CAD generators that still reward only shape
@@ -111,7 +120,7 @@ resemblance. This proposal contributes:
 validated against hand calculations;
 \item a specification generator in which every specification is proven solvable, and a sizing-only
 baseline that separates configuration from sizing;
-\item a recipe that trains one designer to design, revise and lighten on a single 16\,GB GPU;
+\item a recipe that trains one designer to design, revise, and lighten on a single 16\,GB GPU;
 \item an evaluation that separates the effect of feedback from the effect of more attempts.
 \end{itemize}
 
@@ -139,7 +148,7 @@ the repair skill is trained.
 
 \section{Research Questions and Hypotheses}
 
-Table~\ref{tab:rq} lists the questions, their variables and the planned analysis. The hypotheses are:
+Table~\ref{tab:rq} lists the questions, their variables, and the planned analysis. The hypotheses are:
 \textbf{H1:} the FEA-graded reward raises the full pass rate over both SFT alone and the shape reward,
 because only it scores what a spec requires. \textbf{H2:} for untrained and SFT-only designers,
 best-of-$k$ sampling matches or beats the loop at equal $k$, as in our pilot; after training on revise
@@ -147,37 +156,25 @@ and lighten prompts, the loop beats best-of-$k$. \textbf{H3:} without the mass t
 no lighter than the sizing-only reference; with it, they are lighter, because the designer can move
 material instead of only scaling it.
 
-\section{Approach}
+\section{Approach}\label{sec:approach}
+
+Fig.~\ref{fig:system} follows one spec through the system.
 
 \begin{figure}[t]
 \centering
-\resizebox{\columnwidth}{!}{%
-\begin{tikzpicture}[font=\footnotesize,
-  box/.style={draw, rounded corners=2pt, align=center, inner sep=3pt, minimum height=8mm},
-  arr/.style={-{Stealth[length=1.8mm]}}]
-\node[box, minimum width=13mm] (spec) at (0,0) {Request};
-\node[box, minimum width=19mm] (parse) at (2.3,0) {Parser\\(untrained)};
-\node[box, minimum width=20mm, fill=black!8] (design) at (5.0,0) {Designer\\(trained LLM)};
-\node[box, minimum width=17mm] (report) at (7.95,0) {Report\\(peak, where)};
-\node[box, text width=31mm] (check) at (5.0,-1.8) {Checker: sandboxed run, one solid, holes and envelope, mesh and CalculiX};
-\node[box, minimum width=19mm] (grpo) at (0.95,-1.8) {GRPO update\\(training only)};
-\draw[arr] (spec) -- (parse);
-\draw[arr] (parse) -- node[above]{spec} (design);
-\draw[arr] (design) -- node[right]{program} (check);
-\draw[arr] (check.east) -| (report.south);
-\draw[arr] (report.north) -- ++(0,0.45) -| node[pos=0.25, above]{revise / lighten} (design.north);
-\draw[arr, dashed] (check.west) -- node[above]{reward} (grpo.east);
-\draw[arr, dashed] (grpo.north) -- (design.south west);
-\end{tikzpicture}}
-\caption{FEAther. Only the designer is trained; the parser and the report stay outside the reward
-path. At run time the report drives revisions; in training the checker's reward updates the designer.}
+\includegraphics[width=\columnwidth]{figures/pipeline_paper.png}
+\caption{One pass through FEAther on generated spec l\_bracket-0000. The program is an excerpt of the spec's reference;
+the part and its mesh are the checker's own; the report is the checker's output. Only the designer (blue
+outline) is trained. At run time the report returns to the designer, which revises while the part fails and
+lightens it while it passes, as here: the part passes but is over its mass budget. In training, the checker's
+reward updates the designer by GRPO (dashed).}
 \label{fig:system}
 \end{figure}
 
 \textbf{Specifications.} Each specification (spec) is a structured record and an English prompt that
-states every number in it: a load (force, point, direction and patch radius), bolt holes (axis and
-diameter), an envelope the part must stay inside, the material (PLA, Young's modulus 2300\,MPa) and
-limits on peak stress, deflection and mass. A generator samples specs for each part family (first
+states every number in it: a load (force, point, direction, and patch radius), bolt holes (axis and
+diameter), an envelope the part must stay inside, the material (PLA, Young's modulus 2300\,MPa), and
+limits on peak stress, deflection, and mass. A generator samples specs for each part family (first
 L-brackets and wall hooks, about five by the end, with one or two families held out of training). It
 sizes a reference program from that family's template by hand calculation and keeps the spec only if
 the checker passes the reference. Each kept spec is therefore proven solvable. The reference then sets
@@ -186,17 +183,17 @@ of the reference's mass, because a budget at the reference would stop rewarding 
 what sizing alone achieves.
 
 \textbf{Checker.} Programs from the model are untrusted. Each one runs in its own process with no
-network (its own user and network namespaces) and with limits on memory, CPU time and file size; it
+network (its own user and network namespaces) and with limits on memory, CPU time, and file size; it
 must leave its part in a variable named \texttt{result}. The checker then grades in stages, and credit
 stops at the first that fails: the program runs (0.1); it makes exactly one valid solid (0.1); every
-bolt hole is open where the spec puts it, a surface lies at the load point and the part stays in the
+bolt hole is open where the spec puts it, a surface lies at the load point, and the part stays in the
 envelope (0.2); the structure (0.4, the mean over requirements of $\min(1,\text{limit}/\text{value})$
 for peak stress and deflection); and the mass ($0.2\min(1,\text{budget}/\text{mass})$, counted only once
 the structure passes). Gmsh~\cite{geuzaine2009gmsh} meshes the part with quadratic tetrahedra, refined
 on curved faces, and CalculiX~\cite{dhondt2004fem} solves a linear static case: bolt bores held rigid,
 the load spread over a patch. Both of these raise stress artificially near the bores and the patch, so
 peak von Mises stress is read outside a zone one bolt diameter beyond each bore and twice the patch
-radius round the load. The report states which stage failed, the peak stress, where it is and by how
+radius around the load. The report states which stage failed, the peak stress, where it is, and by how
 much it misses its limit (Fig.~\ref{fig:example}).
 
 \begin{figure}[t]
@@ -210,7 +207,7 @@ presses straight down on it at the point (42, 0, 76) mm, spread over a patch of 
 \textbf{(b) Checker report on reference part L1, built to fail.}\\
 \texttt{FAIL at stage 'structure' (reward 0.70 of 1.00)}\\
 \texttt{- Largest deflection 3.90 mm (no limit set).}\\
-\texttt{- Peak stress 13.36 MPa at (6.6, 0.9, 61.4) mm;}\\
+\texttt{- Peak stress 13.40 MPa at (6.6, 0.9, 61.4) mm;}\\
 \texttt{\ \ limit 10.00 MPa, over the limit by 34\%.}\\
 \texttt{- Mass 24.38 g (not scored until the structure passes).}}}
 \caption{What the designer sees: (a) a spec's prompt, with every number in the spec; (b) the report it
@@ -218,7 +215,7 @@ revises from. The peak lies on the inside of L1's 2\,mm bend radius, where curve
 \label{fig:example}
 \end{figure}
 
-\textbf{Agents and loop.} Fig.~\ref{fig:system} shows the system. The designer writes a program; while
+\textbf{Agents and loop.} The designer writes a program; while
 it fails, the designer receives its own program and the report and revises; once it passes, it is asked
 for a lighter version that still passes, and the lightest passing design is kept.
 
@@ -236,21 +233,21 @@ than pass/fail. Training mixes three prompt kinds, the same ones the loop uses: 
 of the model's own failed programs and its report; and lighten, with a passing program.
 QLoRA~\cite{dettmers2023qlora} freezes the base model in 4-bit precision and trains small adapter
 matrices, which brings the 8B model within a 16\,GB laptop GPU (about 11\,GB, estimated). FEA rewards
-run on 20 CPU workers at 2--7\,s each, so generating designs on the GPU is the bottleneck.
+run on 20 CPU workers at 2--8\,s each, so generating designs on the GPU is the bottleneck.
 
 \section{Preliminary Results}
 
 All results below come from the project repository and can be re-run with one command each.
 
 \textbf{The oracle agrees with theory.} A cantilever beam gave a tip deflection of 1.736\,mm against
-1.739\,mm from beam theory. Ten hand-written reference parts in three families put their worst point
+1.739--1.753\,mm from beam theory without and with shear deflection. Ten hand-written reference parts in three families put their worst point
 where a reliable formula applies (Table~\ref{tab:oracle}): curved-beam theory for the bends of
 L-brackets and hooks, and Heywood's formula for a hole in a strip~\cite{budynas2020shigley,pilkey2008peterson}.
-On all ten, the checker's FEA peak lies within 10\% of the hand calculation and within 8\,mm of the
+On all ten, the checker's FEA peak lies within 10\% of the hand calculation and within 4.4\,mm of the
 predicted point or its mirror image, and refining the mesh moves each value by under 4\%. The checker
-fails the three parts built to exceed the 10\,MPa limit and passes the other seven, in 1.6--7.3\,s per
+fails the three parts built to exceed the 10\,MPa limit and passes the other seven, in 2--8\,s per
 part. Separate tests confirm that a crashing program, an endless loop, a program grabbing 8\,GB, an
-attempt to reach the network, a part in two pieces, a missing bolt hole and a hole 0.7\,mm too large
+attempt to reach the network, a part in two pieces, a missing bolt hole, and a hole 0.7\,mm too large
 each fail at the right stage.
 
 \begin{table}[t]
@@ -261,26 +258,26 @@ each fail at the right stage.
 \toprule
 Family & Parts & Hand calculation at worst point & FEA / hand\\
 \midrule
-L-bracket & 4 & curved beam (Winkler), bend & 1.046--1.096\\
+L-bracket & 4 & curved beam (Winkler), bend & 1.031--1.099\\
 Wall hook & 3 & curved beam (Winkler), curve & 0.975--1.047\\
-Hanger strap & 3 & hole in a strip (Heywood) & 1.013--1.024\\
+Hanger strap & 3 & hole in a strip (Heywood) & 0.995--1.010\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Every spec is solvable.} The generator produced 40 specs, 20 L-brackets and 20 hooks, in 104\,s
-on eight workers; every reference passed on its first FEA run, with peaks of 7.6--9.1\,MPa against the
+\textbf{Every spec is solvable.} The generator produced 40 specs, 20 L-brackets and 20 hooks; every
+reference passed on its first FEA run, with peaks of 7.6--9.1\,MPa against the
 10\,MPa limit.
 
 \textbf{Untrained models solve nothing.} We served Qwen3-1.7B (16-bit) and Qwen3-8B (8-bit floating
 point) with vLLM~\cite{kwon2023vllm}, thinking mode off, and gave each eight checker runs per spec,
 either as eight independent samples or in the loop (Table~\ref{tab:baseline}). Neither model passed a
 spec. Most programs misuse the CadQuery interface; those that make a solid cross into the wall, because
-CadQuery centres boxes on the origin. In the loop, about 80\% of revisions (225 of 280 for 1.7B, 221 of
+CadQuery centers boxes on the origin. In the loop, about 80\% of revisions (225 of 280 for 1.7B, 221 of
 280 for 8B) repeat the program they were asked to fix, so independent samples reach running code on more
 specs than the loop does (34 against 18 for the 8B). This agrees with Olausson et al.~\cite{olausson2024selfrepair}
 and is the baseline that trained revision must beat. GRPO would already have a signal on 34 of 40 specs,
-where the 8B's samples score differently, but only between the credits for running, for one solid and
+where the 8B's samples score differently, but only between the credits for running, for one solid, and
 for the interfaces; no design reached the structural checks. SFT therefore comes first.
 
 \begin{table}[t]
@@ -328,12 +325,12 @@ normally distributed differences. As an extension, a subset of before-and-after 
 isotropic material, while printed PLA is weaker across its layers. Validation against hand
 calculations and the planned physical tests bound this. \textit{Internal.} A trained model may exploit
 the oracle, for example with geometry that meshes oddly; the staged checks, the stress-reading zones,
-mesh-refinement spot checks and a log of every exploit found address this. \textit{External.} The specs
-come from our own generator; held-out families test whether the model generalises beyond it, and the
+mesh-refinement spot checks, and a log of every exploit found address this. \textit{External.} The specs
+come from our own generator; held-out families test whether the model generalizes beyond it, and the
 first results cover only PLA and up to five families. \textit{Conclusion.} The 40-spec pilot is small;
 the final evaluation uses hundreds of held-out specs and repeated training seeds.
 
-\section{Risks, Plan and Availability}
+\section{Risks, Plan, and Availability}
 
 \textbf{Risks and fallbacks.} If SFT still leaves no designs reaching the structural checks, training
 starts from easier specs (limits well above the reference's stress) and from revise prompts built by
@@ -351,7 +348,7 @@ extend Olausson et al.'s finding~\cite{olausson2024selfrepair} from code to phys
 families and the experiments for RQ1--RQ3. Month 5: physical tests. Month 6: a demonstration and the
 thesis.
 
-\textbf{Availability.} Code, the 40 specs and all baseline results are in a Git repository that will be
+\textbf{Availability.} Code, the 40 specs, and all baseline results are in a Git repository that will be
 made public with the thesis, and is available to reviewers on request.
 
 \bibliographystyle{IEEEtran}
